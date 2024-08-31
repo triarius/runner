@@ -41,23 +41,34 @@ pub fn run(
         .take()
         .ok_or_else(|| eyre!("child stdin is not piped"))?;
 
-    thread::scope(|s| -> Result<()> {
-        s.spawn(|| tee(child_out, stdout(), stdout_log_path));
-        s.spawn(|| tee(child_err, stderr(), stderr_log_path));
-        s.spawn(|| tee(stdin(), child_in, stdin_log_path));
+    let mut stdin_outputs = outputs(child_in, stdin_log_path)?;
+    let mut stdout_outputs = outputs(stdout(), stdout_log_path)?;
+    let mut stderr_outputs = outputs(stderr(), stderr_log_path)?;
 
-        Ok(())
-    })?;
+    let _ = thread::scope(|s| -> Result<i32> {
+        let stdin_thread = s.spawn(|| tee(stdin(), &mut stdin_outputs[..]));
+        let stdout_thread = s.spawn(|| tee(child_out, &mut stdout_outputs[..]));
+        let stderr_thread = s.spawn(|| tee(child_err, &mut stderr_outputs[..]));
+
+        [stdout_thread, stderr_thread, stdin_thread]
+            .into_iter()
+            .flat_map(|t| t.join().map_err(|_| eyre!("thread panic")))
+            .collect::<Result<()>>()?;
+
+        Ok(1)
+    });
 
     let code = child
         .wait()?
         .code()
         .ok_or_else(|| eyre!("process terminated by signal"))?;
-
     Ok(code)
 }
 
-fn outputs<W: Write + 'static>(writer: W, filename: Option<&Path>) -> Result<Vec<Box<dyn Write>>> {
+fn outputs<W: Write + Send + 'static>(
+    writer: W,
+    filename: Option<&Path>,
+) -> Result<Vec<Box<(dyn Write + Send)>>> {
     match filename {
         Some(filename) => {
             let file = File::create(filename)?;
@@ -67,20 +78,15 @@ fn outputs<W: Write + 'static>(writer: W, filename: Option<&Path>) -> Result<Vec
     }
 }
 
-fn tee<W: Write + 'static>(
-    mut stream: impl Read,
-    output: W,
-    filename: Option<&Path>,
-) -> Result<()> {
+fn tee(mut stream: impl Read, outputs: &mut [Box<dyn Write + Send>]) -> Result<()> {
     let mut buffer = [0u8; 1024];
-    let mut outputs = outputs(output, filename)?;
     loop {
         let n = stream.read(&mut buffer)?;
         if n == 0 {
             break;
         }
-        for output in &mut outputs {
-            output.write_all(&buffer[..n])?;
+        for o in outputs.iter_mut() {
+            o.write_all(&buffer[..n])?;
         }
     }
     Ok(())
