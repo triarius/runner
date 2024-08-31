@@ -51,7 +51,7 @@ fn main() -> Result<()> {
         .transpose()?;
 
     let code = runner::run(
-        &exec[0],
+        exec[0],
         &exec[1..],
         in_file.as_deref(),
         out_file.as_deref(),
