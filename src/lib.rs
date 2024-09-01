@@ -1,3 +1,5 @@
+mod flat_map_err;
+
 use eyre::{eyre, Result};
 use std::{
     fs::File,
