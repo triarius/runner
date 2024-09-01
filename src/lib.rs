@@ -52,8 +52,12 @@ pub fn run(
     let mut stdout_outputs = outputs(stdout(), stdout_log_path)?;
     let mut stderr_outputs = outputs(stderr(), stderr_log_path)?;
 
-    // Read from stdin and send on a channel we will call select! on this channel
+    // Create a channel to send data from stdin to the cancellable_tee thread.
     let (t_in, r_in) = bounded(1);
+
+    // Read from stdin and send on a channel. We will call select! on this
+    // channel in the cancellable_tee thread.
+    // DO NOT join on this thread, it will cause reading stdin to block.
     thread::spawn(move || {
         let mut buffer = [0u8; 1024];
         loop {
@@ -68,6 +72,10 @@ pub fn run(
     thread::scope(|s| -> Result<i32> {
         let (t_cancel, r_cancel) = bounded(1);
 
+        // If cancellable_tee were not used here, reading from stdin will block the thread even
+        // after the child process has exited. This will prevent the process from exiting.
+        // So we have to cancel the tee thread when the child process exits and before
+        // joining on the tee thread.
         s.spawn(move || cancellable_tee(&r_cancel, &r_in, &mut stdin_outputs[..]));
         s.spawn(|| tee(child_out, &mut stdout_outputs[..]));
         s.spawn(|| tee(child_err, &mut stderr_outputs[..]));
@@ -77,6 +85,7 @@ pub fn run(
             .code()
             .ok_or_else(|| eyre!("process terminated by signal"))?;
 
+        // Cancel the tee threads. This may fail if the stdin was closed before the child process.
         t_cancel.try_send(()).flat_map_err(|e| match e {
             TrySendError::Full(()) => Err(e),
             TrySendError::Disconnected(()) => Ok(()), // If the stdin was close, this is expected
