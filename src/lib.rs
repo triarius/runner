@@ -1,5 +1,7 @@
 mod flat_map_err;
 
+use crate::flat_map_err::FlatMapErr;
+use crossbeam::channel::{bounded, select, Receiver, TrySendError};
 use eyre::{eyre, Result};
 use std::{
     fs::File,
@@ -14,6 +16,9 @@ use std::{
 /// # Errors
 /// This function returns an error if the child process cannot be spawned, or if any of the
 /// file or thread operations fail.
+///
+/// # Panics
+/// Errors reading from stdin moving its data.
 pub fn run(
     cmd: &str,
     args: &[&str],
@@ -47,24 +52,38 @@ pub fn run(
     let mut stdout_outputs = outputs(stdout(), stdout_log_path)?;
     let mut stderr_outputs = outputs(stderr(), stderr_log_path)?;
 
-    let _ = thread::scope(|s| -> Result<i32> {
-        let stdin_thread = s.spawn(|| tee(stdin(), &mut stdin_outputs[..]));
-        let stdout_thread = s.spawn(|| tee(child_out, &mut stdout_outputs[..]));
-        let stderr_thread = s.spawn(|| tee(child_err, &mut stderr_outputs[..]));
-
-        [stdout_thread, stderr_thread, stdin_thread]
-            .into_iter()
-            .flat_map(|t| t.join().map_err(|_| eyre!("thread panic")))
-            .collect::<Result<()>>()?;
-
-        Ok(1)
+    // Read from stdin and send on a channel we will call select! on this channel
+    let (t_in, r_in) = bounded(1);
+    thread::spawn(move || {
+        let mut buffer = [0u8; 1024];
+        loop {
+            let n = stdin().read(&mut buffer).unwrap();
+            if n == 0 {
+                break;
+            }
+            t_in.send((buffer, n)).unwrap();
+        }
     });
 
-    let code = child
-        .wait()?
-        .code()
-        .ok_or_else(|| eyre!("process terminated by signal"))?;
-    Ok(code)
+    thread::scope(|s| -> Result<i32> {
+        let (t_cancel, r_cancel) = bounded(1);
+
+        s.spawn(move || cancellable_tee(&r_cancel, &r_in, &mut stdin_outputs[..]));
+        s.spawn(|| tee(child_out, &mut stdout_outputs[..]));
+        s.spawn(|| tee(child_err, &mut stderr_outputs[..]));
+
+        let code = child
+            .wait()?
+            .code()
+            .ok_or_else(|| eyre!("process terminated by signal"))?;
+
+        t_cancel.try_send(()).flat_map_err(|e| match e {
+            TrySendError::Full(()) => Err(e),
+            TrySendError::Disconnected(()) => Ok(()), // If the stdin was close, this is expected
+        })?;
+
+        Ok(code)
+    })
 }
 
 fn outputs<W: Write + Send + 'static>(
@@ -89,6 +108,36 @@ fn tee(mut stream: impl Read, outputs: &mut [Box<dyn Write + Send>]) -> Result<(
         }
         for o in outputs.iter_mut() {
             o.write_all(&buffer[..n])?;
+        }
+    }
+    Ok(())
+}
+
+/// Read from a channel and write to multiple outputs until the channel is closed or the cancel
+/// channel is received.
+///
+/// # Errors
+/// If writing to any of the outputs fails, this function returns an error.
+fn cancellable_tee(
+    cancel: &Receiver<()>,
+    data: &Receiver<([u8; 1024], usize)>,
+    outputs: &mut [Box<dyn Write + Send>],
+) -> Result<()> {
+    loop {
+        select! {
+            recv(cancel) -> _ => break,
+            recv(data) -> recv => {
+                if let Ok((buffer, n)) = recv {
+                    if n == 0 {
+                        continue;
+                    }
+                    for o in outputs.iter_mut() {
+                        o.write_all(&buffer[..n])?;
+                    }
+                } else {
+                    break;
+                }
+            }
         }
     }
     Ok(())
