@@ -27,6 +27,7 @@ mod test {
     #[test]
     fn flat_map_err() {
         use super::FlatMapErr;
+        use pretty_assertions::assert_eq;
 
         #[derive(Debug, PartialEq, Eq)]
         enum Error {
@@ -39,12 +40,15 @@ mod test {
             Error::GraveError => Err(e),
         };
 
-        let success = Ok(());
-        let ignorable_error = Err(Error::IgnorableError);
-        let grave_error = Err(Error::GraveError);
-
-        assert_eq!(success.flat_map_err(ignore), Ok(()));
-        assert_eq!(ignorable_error.flat_map_err(ignore), Ok(()));
-        assert_eq!(grave_error.flat_map_err(ignore), Err(Error::GraveError));
+        [
+            (Ok(()), Ok(())),
+            (Err(Error::IgnorableError), Ok(())),
+            (Err(Error::GraveError), Err(Error::GraveError)),
+        ]
+        .into_iter()
+        .for_each(|(input, expected)| {
+            let actual = input.flat_map_err(ignore);
+            assert_eq!(actual, expected);
+        });
     }
 }
