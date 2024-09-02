@@ -8,8 +8,13 @@ clap = { version = "4.5.16", features = ["derive", "env"] }
 crossbeam = "0.8.4"
 eyre = "0.6.12"
 
+[dev-dependencies]
+assert_cmd = "2.0.16"
+pretty_assertions = "1.4.0"
+
 [lints.clippy]
 all = "deny"
 pedantic = "deny"
 single_match_else = { level = "allow", priority = 1 }
 enum_glob_use = { level = "allow", priority = 1 }
+needless_for_each = { level = "allow", priority = 1 }
