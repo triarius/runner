@@ -88,7 +88,7 @@ pub fn run(
         // Cancel the tee threads. This may fail if the stdin was closed before the child process.
         t_cancel.try_send(()).flat_map_err(|e| match e {
             TrySendError::Full(()) => Err(e),
-            TrySendError::Disconnected(()) => Ok(()), // If the stdin was close, this is expected
+            TrySendError::Disconnected(()) => Ok(()), // If the stdin was closed, this is expected
         })?;
 
         Ok(code)
