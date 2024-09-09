@@ -33,20 +33,9 @@ pub fn run(
         .stderr(Stdio::piped())
         .spawn()?;
 
-    let child_out = child
-        .stdout
-        .take()
-        .ok_or_else(|| eyre!("child stdout is not piped"))?;
-
-    let child_err = child
-        .stderr
-        .take()
-        .ok_or_else(|| eyre!("child stderr is not piped"))?;
-
-    let child_in = child
-        .stdin
-        .take()
-        .ok_or_else(|| eyre!("child stdin is not piped"))?;
+    let child_out = child.stdout.take().expect("child stdout is not piped");
+    let child_err = child.stderr.take().expect("child stderr is not piped");
+    let child_in = child.stdin.take().expect("child stdin is not piped");
 
     let mut stdin_outputs = outputs(child_in, stdin_log_path)?;
     let mut stdout_outputs = outputs(stdout(), stdout_log_path)?;
