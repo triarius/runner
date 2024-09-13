@@ -1,6 +1,6 @@
 use clap::Parser;
 use eyre::Result;
-use std::path::PathBuf;
+use std::{path::PathBuf, process};
 
 /// A command runner that optionally logs the I/O streams to files.
 #[derive(Debug, Parser, PartialEq, Eq)]
@@ -35,7 +35,7 @@ fn main() -> Result<()> {
         args.err_file.as_deref(),
     )?;
 
-    std::process::exit(code);
+    process::exit(code);
 }
 
 #[cfg(test)]
