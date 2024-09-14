@@ -1,6 +1,7 @@
 mod flat_map_err;
 
 use crate::flat_map_err::FlatMapErr;
+use core::panic;
 use crossbeam::channel::{bounded, select, Receiver, TrySendError};
 use eyre::{eyre, Result};
 use std::{
@@ -31,7 +32,7 @@ fn io_streams<W: Write + Send + 'static>(
 /// file or thread operations fail.
 ///
 /// # Panics
-/// Errors reading from stdin moving its data.
+/// Errors reading from stdin other than `ErrorKind::Interrupted`.
 pub fn run(
     cmd: &str,
     args: &[&str],
@@ -53,7 +54,7 @@ pub fn run(
     match child.stdin.take() {
         Some(child_in) => {
             let in_file = File::create(stdin_log_path.unwrap())?;
-            let mut stdin_outputs: Vec<Box<dyn Write + Send>> =
+            let mut in_writers: Vec<Box<dyn Write + Send>> =
                 vec![Box::new(child_in), Box::new(in_file)];
 
             // Create a channel to send data from stdin to the cancellable_tee thread.
@@ -65,11 +66,18 @@ pub fn run(
             thread::spawn(move || {
                 let mut buffer = [0u8; 1024];
                 loop {
-                    let n = stdin().read(&mut buffer).unwrap();
-                    if n == 0 {
-                        break;
+                    match stdin().read(&mut buffer) {
+                        Ok(n) => {
+                            if n == 0 {
+                                break;
+                            }
+                            t_in.send((buffer, n)).unwrap();
+                        }
+                        Err(e) => match e.kind() {
+                            std::io::ErrorKind::Interrupted => continue,
+                            _ => panic!("{e:?}"),
+                        },
                     }
-                    t_in.send((buffer, n)).unwrap();
                 }
             });
 
@@ -80,7 +88,7 @@ pub fn run(
                 // after the child process has exited. This will prevent the process from exiting.
                 // So we have to cancel the tee thread when the child process exits and before
                 // joining on the tee thread.
-                s.spawn(move || cancellable_tee(&r_cancel, &r_in, &mut stdin_outputs[..]));
+                s.spawn(move || cancellable_tee(&r_cancel, &r_in, &mut in_writers[..]));
 
                 if let Some(child_out) = child.stdout.take() {
                     s.spawn(move || tee(child_out, &mut out_writers[..]));
