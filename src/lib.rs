@@ -9,7 +9,7 @@ use std::{
     io::{stderr, stdin, stdout, Read, Write},
     path::Path,
     process::{Command, Stdio},
-    thread,
+    thread::{self, Scope},
 };
 
 fn io_streams<W: Write + Send + 'static>(
@@ -90,17 +90,7 @@ pub fn run(
                 // joining on the tee thread.
                 s.spawn(move || cancellable_tee(&r_cancel, &r_in, &mut in_writers[..]));
 
-                if let Some(child_out) = child.stdout.take() {
-                    s.spawn(move || tee(child_out, &mut out_writers[..]));
-                }
-                if let Some(child_err) = child.stderr.take() {
-                    s.spawn(move || tee(child_err, &mut err_writers[..]));
-                }
-
-                let code = child
-                    .wait()?
-                    .code()
-                    .ok_or_else(|| eyre!("process terminated by signal"))?;
+                let code = run_with_output(s, child, &mut out_writers, &mut err_writers)?;
 
                 // Cancel the tee threads. This may fail if the stdin was closed before the child process.
                 t_cancel.try_send(()).flat_map_err(|e| match e {
@@ -111,20 +101,27 @@ pub fn run(
                 Ok(code)
             })
         }
-        None => thread::scope(|s| -> Result<i32> {
-            if let Some(child_out) = child.stdout.take() {
-                s.spawn(move || tee(child_out, &mut out_writers[..]));
-            }
-            if let Some(child_err) = child.stderr.take() {
-                s.spawn(move || tee(child_err, &mut err_writers[..]));
-            }
-
-            child
-                .wait()?
-                .code()
-                .ok_or_else(|| eyre!("process terminated by signal"))
-        }),
+        None => thread::scope(|s| run_with_output(s, child, &mut out_writers, &mut err_writers)),
     }
+}
+
+fn run_with_output<'a>(
+    s: &'a Scope<'a, '_>,
+    mut child: std::process::Child,
+    out_writers: &'a mut [Box<dyn Write + Send>],
+    err_writers: &'a mut [Box<dyn Write + Send>],
+) -> Result<i32> {
+    if let Some(child_out) = child.stdout.take() {
+        s.spawn(move || tee(child_out, &mut out_writers[..]));
+    }
+    if let Some(child_err) = child.stderr.take() {
+        s.spawn(move || tee(child_err, &mut err_writers[..]));
+    }
+
+    child
+        .wait()?
+        .code()
+        .ok_or_else(|| eyre!("process terminated by signal"))
 }
 
 fn tee(mut stream: impl Read, outputs: &mut [Box<dyn Write + Send>]) -> Result<()> {
