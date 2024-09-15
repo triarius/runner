@@ -1,9 +1,8 @@
 /// A trait for `Result` that allows chaining a function that returns a `Result` to the error type.
 ///
 /// # Examples
-/// One use case is if the ok type, `T` has a default value, and the error type, `E` may take
-/// multiple values that may be ignored, then this trait can be used to map the error type to the
-/// default value of `T` for the errors that can be ignored.
+/// If the Ok type, `T` has a default value, and the error type, `E` has some ignorable values, then
+/// this trait can be used to map the ignorabl error type values to the default value of `T`.
 pub(crate) trait FlatMapErr<T, D, E> {
     fn flat_map_err<F>(self, f: F) -> Result<T, E>
     where
