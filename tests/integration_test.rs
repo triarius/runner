@@ -59,6 +59,7 @@ fn child_exit_with_files() -> Result<()> {
             err_file_path
                 .to_str()
                 .ok_or_else(|| eyre!("invalid err-file path"))?,
+            "--no-header",
             "--",
             "cat",
         ])

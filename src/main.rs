@@ -18,6 +18,9 @@ struct Args {
     #[arg(short, long, env)]
     err_file: Option<PathBuf>,
 
+    #[arg(long, env)]
+    no_header: bool,
+
     /// The command to run and its arguments. A command must be specified, arguments are space delimited.
     #[arg(last = true, required = true, num_args = 1..)]
     exec: Vec<String>,
@@ -30,6 +33,7 @@ fn main() -> Result<()> {
     let code = runner::run(
         exec[0],
         &exec[1..],
+        args.no_header,
         args.in_file.as_deref(),
         args.out_file.as_deref(),
         args.err_file.as_deref(),
@@ -53,6 +57,7 @@ mod test {
                     in_file: None,
                     out_file: None,
                     err_file: None,
+                    no_header: false,
                     exec: vec!["echo".to_string(), "hello".to_string()],
                 },
             ),
@@ -62,6 +67,7 @@ mod test {
                     in_file: Some("in.txt".into()),
                     out_file: None,
                     err_file: None,
+                    no_header: false,
                     exec: vec!["echo".to_string(), "hello".to_string()],
                 },
             ),
@@ -71,6 +77,7 @@ mod test {
                     in_file: None,
                     out_file: Some("out.txt".into()),
                     err_file: None,
+                    no_header: false,
                     exec: vec!["echo".to_string(), "hello".to_string()],
                 },
             ),
@@ -80,6 +87,7 @@ mod test {
                     in_file: None,
                     out_file: None,
                     err_file: Some("err.txt".into()),
+                    no_header: false,
                     exec: vec!["echo".to_string(), "hello".to_string()],
                 },
             ),
@@ -98,6 +106,7 @@ mod test {
                     in_file: Some("in.txt".into()),
                     out_file: Some("out.txt".into()),
                     err_file: None,
+                    no_header: false,
                     exec: vec!["echo".to_string(), "hello".to_string()],
                 },
             ),
@@ -118,6 +127,7 @@ mod test {
                     in_file: Some("in.txt".into()),
                     out_file: Some("out.txt".into()),
                     err_file: Some("err.txt".into()),
+                    no_header: false,
                     exec: vec!["echo".to_string(), "hello".to_string()],
                 },
             ),
