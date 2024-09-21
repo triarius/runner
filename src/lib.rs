@@ -1,24 +1,30 @@
 mod flat_map_err;
+mod log_file;
 
 use crate::flat_map_err::FlatMapErr;
+use chrono::Utc;
 use core::panic;
 use crossbeam::channel::{bounded, select, Receiver, TrySendError};
 use eyre::{eyre, Result};
 use std::{
-    fs::File,
     io::{stderr, stdin, stdout, Read, Write},
     path::Path,
     process::{Command, Stdio},
     thread::{self, Scope},
 };
 
+fn default_header(name: &str) -> String {
+    format!("[{}]: Begin runner log of {name}", Utc::now())
+}
+
 fn io_streams<W: Write + Send + 'static>(
+    header: Option<&str>,
     writer: W,
     log_path: Option<&Path>,
 ) -> Result<(Stdio, Vec<Box<dyn Write + Send>>)> {
     match log_path {
         Some(path) => {
-            let file = File::create(path)?;
+            let file = log_file::new(header, path)?;
             Ok((Stdio::piped(), vec![Box::new(writer), Box::new(file)]))
         }
         None => Ok((Stdio::inherit(), vec![Box::new(writer)])),
@@ -36,13 +42,23 @@ fn io_streams<W: Write + Send + 'static>(
 pub fn run(
     cmd: &str,
     args: &[&str],
+    no_header: bool,
     stdin_log_path: Option<&Path>,
     stdout_log_path: Option<&Path>,
     stderr_log_path: Option<&Path>,
 ) -> Result<i32> {
     let in_io = stdout_log_path.map_or(Stdio::inherit(), |_| Stdio::piped());
-    let (out_io, mut out_writers) = io_streams(stdout(), stdout_log_path)?;
-    let (err_io, mut err_writers) = io_streams(stderr(), stderr_log_path)?;
+
+    let (out_header, err_header) = if no_header {
+        (None, None)
+    } else {
+        (
+            Some(default_header("stdout")),
+            Some(default_header("stderr")),
+        )
+    };
+    let (out_io, mut out_writers) = io_streams(out_header.as_deref(), stdout(), stdout_log_path)?;
+    let (err_io, mut err_writers) = io_streams(err_header.as_deref(), stderr(), stderr_log_path)?;
 
     let mut child = Command::new(cmd)
         .args(args)
@@ -53,7 +69,12 @@ pub fn run(
 
     match child.stdin.take() {
         Some(child_in) => {
-            let in_file = File::create(stdin_log_path.unwrap())?;
+            let header = if no_header {
+                None
+            } else {
+                Some(default_header("stdin"))
+            };
+            let in_file = log_file::new(header.as_deref(), stdin_log_path.unwrap())?;
             let mut in_writers: Vec<Box<dyn Write + Send>> =
                 vec![Box::new(child_in), Box::new(in_file)];
 
