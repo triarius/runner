@@ -5,7 +5,7 @@ use core::panic;
 use crossbeam::channel::{bounded, select, Receiver, TrySendError};
 use eyre::{eyre, Result};
 use std::{
-    fs::File,
+    fs::OpenOptions,
     io::{stderr, stdin, stdout, Read, Write},
     path::Path,
     process::{Command, Stdio},
@@ -18,7 +18,7 @@ fn io_streams<W: Write + Send + 'static>(
 ) -> Result<(Stdio, Vec<Box<dyn Write + Send>>)> {
     match log_path {
         Some(path) => {
-            let file = File::create(path)?;
+            let file = OpenOptions::new().create(true).append(true).open(path)?;
             Ok((Stdio::piped(), vec![Box::new(writer), Box::new(file)]))
         }
         None => Ok((Stdio::inherit(), vec![Box::new(writer)])),
@@ -53,7 +53,10 @@ pub fn run(
 
     match child.stdin.take() {
         Some(child_in) => {
-            let in_file = File::create(stdin_log_path.unwrap())?;
+            let in_file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(stdin_log_path.unwrap())?;
             let mut in_writers: Vec<Box<dyn Write + Send>> =
                 vec![Box::new(child_in), Box::new(in_file)];
 
