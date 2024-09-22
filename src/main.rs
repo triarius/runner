@@ -18,6 +18,7 @@ struct Args {
     #[arg(short, long, env)]
     err_file: Option<PathBuf>,
 
+    /// Whether to write a header to the log file(s).
     #[arg(long, env)]
     no_header: bool,
 
