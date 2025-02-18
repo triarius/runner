@@ -12,7 +12,7 @@ eyre = "0.6.12"
 [dev-dependencies]
 assert_cmd = "2.0.16"
 pretty_assertions = "1.4.1"
-tempfile = "3.16.0"
+tempfile = "3.17.0"
 
 [lints.clippy]
 all = "deny"
