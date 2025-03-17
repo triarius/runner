@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 chrono = "0.4.40"
-clap = { version = "4.5.31", features = ["derive", "env"] }
+clap = { version = "4.5.32", features = ["derive", "env"] }
 crossbeam = "0.8.4"
 eyre = "0.6.12"
 
