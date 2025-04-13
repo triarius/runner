@@ -95,7 +95,7 @@ pub fn run(
                             t_in.send((buffer, n)).unwrap();
                         }
                         Err(e) => match e.kind() {
-                            std::io::ErrorKind::Interrupted => continue,
+                            std::io::ErrorKind::Interrupted => {}
                             _ => panic!("{e:?}"),
                         },
                     }
